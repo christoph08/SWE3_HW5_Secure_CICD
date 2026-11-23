@@ -1,6 +1,8 @@
-# SWE3 – Homework 4: Docker & CI/CD
+# SWE3 – Homework 5: Secure CI/CD
 
-This repository contains the implementation of a university assignment focused on **Docker containerization and CI/CD with GitHub Actions**.
+This repository contains the implementation of a university assignment focused on **Docker containerization and a security-focused CI/CD pipeline with GitHub Actions**.
+
+The pipeline builds and publishes a Docker image, scans the source code and image for vulnerabilities, generates a Software Bill of Materials (SBOM), and creates a verifiable attestation for the SBOM.
 
 ## Provided application
 
@@ -8,12 +10,14 @@ The original C# / ASP.NET Core URL Shortener application was provided as the sta
 
 The application creates and manages short links and redirects requests to their original URLs. Data is persisted in PostgreSQL using Entity Framework Core.
 
-## Assignment requirements
+## Assignment scope
 
-- An intentionally inefficient Dockerfile
-- An optimized Dockerfile
+- An intentionally inefficient Dockerfile and an optimized Dockerfile
 - A Docker Compose configuration that starts the URL Shortener and PostgreSQL
 - A GitHub Actions pipeline that builds the Docker image and publishes it to GitHub Container Registry (GHCR)
+- Source-code and container-image vulnerability scans with Trivy
+- Generation and publication of a CycloneDX SBOM
+- Creation and verification of an SBOM attestation
 
 ## Repository structure
 
@@ -22,7 +26,7 @@ The application creates and manages short links and redirects requests to their 
 | `Dockerfile` | Deliberately inefficient single-stage build using the .NET SDK image |
 | `Dockerfile.optimized` | Multi-stage build with a smaller ASP.NET runtime image and better layer caching |
 | `compose.yaml` | Starts the application and PostgreSQL with a persistent volume and database healthcheck |
-| `.github/workflows/docker-publish.yml` | Builds the optimized image and publishes it to GHCR |
+| `.github/workflows/docker-publish.yml` | Secure CI/CD workflow: scans, builds, publishes, generates the SBOM and attests it |
 | `.dockerignore` | Excludes local build output and development files from the Docker build context |
 
 ## Run locally with Docker Compose
@@ -98,20 +102,104 @@ The measured build durations were 186.3 seconds for the inefficient build and 52
 
 Both Dockerfiles are provided for comparison. Docker Compose and CI use the optimized Dockerfile.
 
-## GitHub Actions and image publishing
+## Secure CI/CD pipeline
 
-The workflow at `.github/workflows/docker-publish.yml` builds the optimized image. It publishes images to **GitHub Container Registry (GHCR)** when code is pushed to `main` or a version tag (`v*`). Pull requests trigger a build without publishing an image.
+The workflow is defined in `.github/workflows/docker-publish.yml`.
 
-The workflow uses the automatically provided `GITHUB_TOKEN` with the `packages: write` permission; no personal access token needs to be stored as a repository secret.
+### Triggers
 
-After the first successful publish, the image is available at:
+The workflow runs on:
+
+- Pushes to the `main` branch
+- Pushes of version tags matching `v*`
+- Pull requests targeting `main`
+- Manual execution using `workflow_dispatch`
+
+Pull requests run the source scan and Docker build, but do not publish an image. The image scan and SBOM attestation run only for events that publish an image.
+
+### Pipeline jobs
+
+The workflow is split into four jobs. Dependencies are configured with `needs`, so a later job only runs after its required jobs have completed successfully.
+
+| Job | Purpose | Implementation |
+|---|---|---|
+| `source-scan` | Scans the repository filesystem for HIGH and CRITICAL vulnerabilities. The job fails if findings at these severities are detected. | Trivy |
+| `build-and-push` | Builds the optimized Docker image and publishes it to GHCR. The resulting image digest is exposed as a job output for the following jobs. | Docker Buildx and Buildx GitHub Actions |
+| `image-security` | Scans the published image for HIGH and CRITICAL vulnerabilities and generates a CycloneDX SBOM. The SBOM is uploaded as a workflow artifact and retained for 30 days. | Trivy and GitHub Actions artifacts |
+| `attest` | Creates an SBOM attestation for the exact image digest and publishes the attestation to the container registry. | `actions/attest` |
+
+Both Trivy scans use `exit-code: '1'` for HIGH and CRITICAL findings. This makes the scan a pipeline gate: detected findings at the configured severities cause the corresponding job to fail.
+
+### Image publishing
+
+The optimized image is published to **GitHub Container Registry (GHCR)**:
 
 ```text
-ghcr.io/christoph08/swe3_hw4_docker:latest
+ghcr.io/christoph08/swe3_hw5_secure_cicd:latest
 ```
 
-Depending on package visibility settings, the package may need to be made public in the GitHub Packages settings.
+The workflow uses the automatically provided `GITHUB_TOKEN` with the required package permissions. No personal access token needs to be stored as a repository secret.
+
+The build job passes the image digest to the security and attestation jobs. Using the digest rather than relying only on a mutable tag ensures that the SBOM and attestation refer to the exact image produced by that workflow run.
+
+### SBOM generation
+
+A Software Bill of Materials (SBOM) is generated from the published Docker image in **CycloneDX** format:
+
+```text
+sbom.cyclonedx.json
+```
+
+The SBOM lists the software components detected in the image. It is uploaded as a GitHub Actions artifact named `docker-image-sbom` and retained for 30 days.
+
+### SBOM attestation
+
+The workflow uses `actions/attest` to create an attestation for the generated SBOM. The attestation is associated with the image name and the image digest from the build job and is pushed to GHCR.
+
+GitHub Actions uses OIDC to establish the workflow identity. This allows the attestation to be verified against its source repository and workflow without maintaining a long-lived signing key in the repository.
+
+## Verify the SBOM attestation
+
+The attestation can be verified locally with the GitHub CLI. Use a recent version of `gh` that supports the `attestation` command (version 2.50.0 or newer).
+
+1. Check the GitHub CLI version:
+
+   ```bash
+   gh --version
+   ```
+
+2. Authenticate with GitHub and make sure the account can read the package:
+
+   ```bash
+   gh auth login
+   gh auth refresh -s read:packages
+   ```
+
+3. Log Docker in to GHCR:
+
+   ```bash
+   gh auth token | docker login ghcr.io \
+     -u "$(gh api user --jq .login)" \
+     --password-stdin
+   ```
+
+4. Verify the attestation for the published image:
+
+   ```bash
+   gh attestation verify \
+     oci://ghcr.io/christoph08/swe3_hw5_secure_cicd:latest \
+     --repo christoph08/SWE3_HW5_Secure_CICD \
+     --predicate-type https://cyclonedx.org/bom
+   ```
+
+A successful verification ends with:
+
+```text
+✓ Verification succeeded!
+```
+
+The verification checks that a matching attestation exists for the image and that its predicate type, source repository, workflow identity, and OIDC issuer satisfy GitHub's verification policy. The output also identifies the repository and workflow that produced the attestation.
 
 ## Original application
 
-The original URL Shortener implementation was supplied as part of the course assignment. This repository focuses on the containerization and CI/CD tasks listed above; it does not claim authorship of the provided application code.
+The original URL Shortener implementation was supplied as part of the course assignment. This repository focuses on the containerization and secure CI/CD tasks listed above; it does not claim authorship of the provided application code.
