@@ -126,13 +126,14 @@ jobs:
       - image-security
     permissions:
       contents: read
+      packages: write
       attestations: write
       id-token: write
       artifact-metadata: write
 
     steps:
       - name: Download SBOM
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v7
         with:
           name: docker-image-sbom
 
@@ -142,4 +143,4 @@ jobs:
           subject-name: ghcr.io/christoph08/swe3_hw5_secure_cicd
           subject-digest: ${{ needs.build-and-push.outputs.image-digest }}
           sbom-path: sbom.cyclonedx.json
-
+          push-to-registry: true
