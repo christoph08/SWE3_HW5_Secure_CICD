@@ -34,7 +34,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/christoph08/swe3_hw4_docker
+          images: ghcr.io/christoph08/swe3_hw5_secure_cicd
           tags: |
             type=ref,event=branch
             type=ref,event=tag
