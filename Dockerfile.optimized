@@ -1,0 +1,20 @@
+# Optimized multi-stage build: SDK is used only for publish.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Copy project metadata first so NuGet restore can be cached.
+COPY UrlShortener.csproj global.json ./
+RUN dotnet restore UrlShortener.csproj
+
+# Copy the remaining source and publish a self-contained app directory.
+COPY . .
+RUN dotnet publish UrlShortener.csproj -c Release -o /app/publish --no-restore
+
+# Small runtime image without SDK/build tooling.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+WORKDIR /app
+ENV ASPNETCORE_URLS=http://+:8080
+EXPOSE 8080
+
+COPY --from=build /app/publish .
+ENTRYPOINT ["dotnet", "UrlShortener.dll"]
