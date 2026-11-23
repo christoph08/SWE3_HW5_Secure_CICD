@@ -9,11 +9,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-push:
+  source-scan:
+    name: Source Code Security Scan
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     steps:
       - name: Check out source
@@ -27,6 +27,18 @@ jobs:
           format: table
           severity: CRITICAL,HIGH
           exit-code: '1'
+
+  build-and-push:
+    name: Build and Publish Docker Image
+    runs-on: ubuntu-latest
+    needs: source-scan
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
