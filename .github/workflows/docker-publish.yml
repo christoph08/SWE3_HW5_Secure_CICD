@@ -1,3 +1,4 @@
+
 name: Build and publish Docker image
 
 on:
@@ -56,6 +57,8 @@ jobs:
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v6
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: index
         with:
           images: ghcr.io/christoph08/swe3_hw5_secure_cicd
           tags: |
@@ -63,6 +66,8 @@ jobs:
             type=ref,event=tag
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
+          annotations: |
+            org.opencontainers.image.description=URL Shortener demo application with secure CI/CD, Trivy vulnerability scanning, CycloneDX SBOM generation and signed attestations.
 
       - name: Build (and publish outside pull requests)
         id: build
@@ -73,9 +78,10 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max  
-  
+          cache-to: type=gha,mode=max
+
   image-security:
     name: Docker Image Security Scan
     runs-on: ubuntu-latest
@@ -117,7 +123,6 @@ jobs:
           format: table
           severity: CRITICAL,HIGH
           exit-code: '1'
-
 
   attest:
     name: Attest SBOM
