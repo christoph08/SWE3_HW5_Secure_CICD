@@ -12,6 +12,9 @@ RUN dotnet publish UrlShortener.csproj -c Release -o /app/publish --no-restore
 
 # Small runtime image without SDK/build tooling.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+
+LABEL org.opencontainers.image.description="URL Shortener demo application with secure CI/CD, Trivy vulnerability scanning, CycloneDX SBOM generation and signed attestations."
+
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
