@@ -19,6 +19,15 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Scan source code with Trivy
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
