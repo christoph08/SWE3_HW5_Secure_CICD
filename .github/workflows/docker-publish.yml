@@ -118,7 +118,7 @@ jobs:
           severity: CRITICAL,HIGH
           exit-code: '1'
 
-  attest:
+    attest:
     name: Attest SBOM
     runs-on: ubuntu-latest
     needs:
@@ -132,6 +132,13 @@ jobs:
       artifact-metadata: write
 
     steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download SBOM
         uses: actions/download-artifact@v7
         with:
